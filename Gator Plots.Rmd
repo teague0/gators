@@ -1,0 +1,50 @@
+---
+title: "Gator Exploration"
+output: html_document
+date: "2022-10-24"
+---
+
+```{r setup, include=FALSE, message=FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(quantreg)
+library(lqmm)
+```
+Ryan Shipley smoothed out the data and calculated corrected CO2 and O2 fits, as well as quantiles for the metabolic rates that are included in the 'data_summary.csv' file that we'll work with. This has the various quantiles calculated for each 5 minute observation period, so there are multiple observations per animal. If we want to calculate SMR in a simlar way to other studies, then we will need to look for the lowest, stable metabolic rate for 10, 15, or 30 minutes (whatever has been used before).  
+
+If we want to do any additional exploration of parameters like RER, then we'll go back into Ryan's code and re-calculate that for our individuals. 
+
+Let's look at some data.
+```{r summary data}
+gators <- read.csv("./Modified_Data/data_summary.csv")
+names(gators)
+```
+
+Plots. What we can see below is that 2 animals (91 & 113) have *much* higher metabolic rates. But also that the quantiles within an individual are pretty similar to one another, so even though there was some noise in the data it's not too crazy.
+
+```{r}
+gators %>% pivot_longer(cols = starts_with("X"),
+                       names_to = "quantile",
+                       values_to = "VO2") %>% #Turn the data longwise to make facets easier
+   arrange(treatment, id) %>% #hopefully organize by treatment
+   ggplot()+
+   geom_boxplot(aes(x = as.character(id), group = as.character(id), y = VO2, fill = treatment))+
+  theme_bw()+
+   facet_wrap(~quantile, ncol = 2)
+```
+
+Ryan calculated an initial quantile regression for each quantile. Let's just look the median
+```{r median quant reg}
+rqfit <- rq(X0.5~treatment, data = gators)
+summary(rqfit) #The 95% CI for treatment includes 0. Likely no difference from control 
+summary(rqfit, se = "boot") #Another way to see a t & p-value
+```
+
+One problem with that approach is that it doesn't account for many samples per individual. Try a mixed effects quant reg, but still nothing although the CIs get smaller (so that's good). We'll keep exploring, but need to check closely on those two really high animals.
+
+```{r median lqmm}
+fit <- lqmm(X0.5~treatment, random = ~id, group = id, data = gators)
+fit.boot <- boot(fit)
+str(fit.boot)
+summary(fit.boot)
+```

@@ -1,0 +1,130 @@
+---
+title: "Teague_Alligators"
+author: "Ryan Shipley"
+date: '2022-10-21'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+```
+
+## R Markdown
+```{r}
+csv_names <- list.files(path = "//Users/ryanshipley/Documents/Research/2022_Teague_Alligators/Raw_Data", # set the path to your folder with csv files
+                        pattern = "*.csv", # select all csv files in the folder
+                        full.names = T) # output full file names (with path)
+
+csv_names2 <- data.frame(file_name = csv_names, #grab name of list with filenames from folder
+                         animal_id = tools::file_path_sans_ext(basename(csv_names)), #strip the path and its extension to get only the animal id
+                         id = as.character(1:length(csv_names))) # id for joining
+
+data <- csv_names %>% 
+  lapply(read_csv) %>% # read all the files at once
+  bind_rows(.id = "id") %>% # bind all tables into one object, and give id for each
+  left_join(csv_names2) %>% # join month column created earlier
+  relocate(animal_id)
+
+data <- data[, -c(2, 11:22, 24:25)] #remove some of the datafree columns
+
+data$DateTime_format <- lubridate::mdy_hms(data$DateTime) # organize to a standardized time format
+
+data$DigitalOut <- ifelse(data$DigitalOut == 0, 0, 1) #try to quickly code for the baseline measurements, one of the experiments is full of NAs
+
+data <- data %>%
+          dplyr::group_by(animal_id) %>%
+          dplyr::mutate(row_id = row_number()) %>% #create a counter for unique observations
+          dplyr::mutate(O2_offset = dplyr::lead(O2, 75, default = NA, order_by = row_id)) %>% # offset for the oxygen lag time due to the equipment, tubing, etc.
+          dplyr::mutate(CO2_offset = dplyr::lead(CO2, 180, default = NA, order_by = row_id)) %>% # offset for the carbon dioxide lag time due to the equipment, tubing, etc.
+          dplyr::mutate(switch = cumsum(c (0, (diff (as.numeric(DigitalOut)) !=0 ))))
+
+data$O2_base <- ifelse(data$DigitalOut == 1, data$O2_offset, NA)
+data$CO2_base <- ifelse(data$DigitalOut == 1, data$CO2_offset, NA)   
+
+baseline_summary <- data %>%
+                      dplyr::group_by(animal_id, switch) %>%
+                      dplyr::summarize(row_id = floor(mean(row_id, na.rm=T)), mean_O2_base = mean(O2_base, na.rm=T), mean_CO2_base = mean(CO2_base, na.rm=T))
+
+data <- merge(data, baseline_summary, id=c("animal_id", "switch", "row_id"), all=T)
+
+data <- data %>%
+          dplyr::group_by(animal_id) %>%
+          dplyr::arrange(row_id) %>%
+          dplyr::group_modify(~ zoo::na.trim(.)) %>%
+          dplyr::mutate(O2_fit = zoo::na.spline(mean_O2_base)) %>%
+          dplyr::mutate(O2_corr = abs(O2_fit - O2)) %>%
+          dplyr::mutate(CO2_fit = zoo::na.spline(mean_CO2_base)) %>%
+          dplyr::mutate(CO2_corr = CO2 - CO2_fit)
+
+data$min5_interval <- ceiling(data$row_id / 300)
+
+#data$O2_corr <- ifelse(data$DigitalOut == 0, data$O2_corr, NA)
+#data$CO2_corr <- ifelse(data$DigitalOut == 0, data$CO2_corr, NA)   
+
+```
+
+```{r, fig.width=8, fig.height=3}
+require(ggplot2)
+require(cowplot)
+
+ggplot()+
+  geom_line(data=data, aes(row_id, O2, group=animal_id, color=animal_id), size=0.1) +
+  geom_line(data=data, aes(row_id, O2_fit, group=animal_id, color=animal_id)) +
+  geom_line(data=data, aes(row_id, O2_base, group=animal_id), color="black") +
+  geom_line(data=data, aes(row_id, mean_O2_base, group=animal_id), color="green") +
+  theme_cowplot()
+```
+
+```{r}
+  data$FRe <- data$FR * ((data$BP - data$WVP) / data$BP)
+  
+    #Convert to fractional concentrations
+  data$O2_Fe <- data$O2_corr * ( data$BP / (data$BP - data$WVP) )
+  data$CO2_Fe <- data$CO2_corr * ( data$BP / (data$BP - data$WVP) )
+
+  data$VO2 <- data$FRe * data$O2_Fe
+
+  data$VCO2 <- data$FRe * data$CO2_Fe
+  
+  data$RER <-  data$VCO2 / data$VO2
+  
+  data$VO2 <- ifelse(data$DigitalOut == 0, data$VO2, NA)
+  data$VCO2 <- ifelse(data$DigitalOut == 0, data$VCO2, NA)   
+  
+  data <- data.table::as.data.table(data)
+  
+  data[, `:=` ('VO2_minute' = zoo::rollapply(VO2, width=list(-30:30), FUN=mean, fill=NA, align="center", partial=TRUE)), by=c("animal_id")]
+  data[, `:=` ('CO2_minute' = zoo::rollapply(VCO2, width=list(-30:30), FUN=mean, fill=NA, align="center", partial=TRUE)), by=c("animal_id")]
+  
+    ###Calculate the rolling slope of the data  
+    rollingSlope.lm.fit <- function(vector) 
+    {
+      a <- coef(.lm.fit(cbind(1, seq(vector)), vector))[2]
+      return(a)
+    }
+
+  data <- data[ !is.na(data$VO2_minute), ] 
+    
+    data[, `:=` ('O2_slope' = zoo::rollapply(VO2_minute, width=60, FUN=rollingSlope.lm.fit, fill=NA)), by=c("animal_id")]
+    
+  data <- data %>%
+          dplyr::filter(O2_slope < 0.0075 & O2_slope > -0.0075)
+  
+  data_summary <- data %>%
+                    dplyr::group_by(animal_id, min5_interval) %>%
+                    dplyr::summarise(x = quantile(VO2_minute, c(0.05, 0.25, 0.5, 0.75, 0.95)), q = c(0.05, 0.25, 0.5, 0.75, 0.95)) %>%
+                    tidyr::pivot_wider(names_from = q, values_from = x)
+  
+  data_summary <- tidyr::separate(data = data_summary, col = animal_id, into = c("id", "treatment", "date"), sep = "\\_")
+  
+  setwd("//Users/ryanshipley/Documents/Research/2022_Teague_Alligators/Modified_Data") ##Laptop
+  
+  write_csv(data_summary, "data_summary.csv")
+```
+
+```{r, fig.width=8, fig.height=3}
+ggplot()+
+  geom_point(data=data, aes(row_id, VO2_minute, color=animal_id)) 
+```
+
