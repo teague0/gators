@@ -1,0 +1,110 @@
+---
+title: "Gator Exploration"
+output: html_document
+date: "2022-10-24"
+---
+
+```{r setup, include=FALSE, message=FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(quantreg)
+library(lqmm)
+library(googlesheets4)
+```
+Ryan Shipley smoothed out the data and calculated corrected CO2 and O2 fits, as well as quantiles for the metabolic rates that are included in the 'data_summary.csv' file that we'll work with. This has the various quantiles calculated for each 5 minute observation period, so there are multiple observations per animal. If we want to calculate SMR in a simlar way to other studies, then we will need to look for the lowest, stable metabolic rate for 10, 15, or 30 minutes (whatever has been used before).  
+
+If we want to do any additional exploration of parameters like RER, then we'll go back into Ryan's code and re-calculate that for our individuals. 
+
+Let's look at some data.
+```{r summary data}
+gatorsOG <- read.csv("./Modified_Data/data_summary.csv")
+gatorsOG$id <- as.character(gatorsOG$id)
+gatorExpInf <- read.csv("./Raw_Data/FMS Experiment Data Collection.xlsx - Sheet1.csv")
+massID <- gatorExpInf %>% select(id = AnalysisAnimalID, mass = Mass, svl = SVL)
+gators <- gatorsOG %>% left_join(massID)
+names(gators)
+```
+
+Plots. What we can see below is that 2 animals (91 & 113) have *much* higher metabolic rates. But also that the quantiles within an individual are pretty similar to one another, so even though there was some noise in the data it's not too crazy.
+
+```{r}
+gators %>% pivot_longer(cols = starts_with("X"),
+                       names_to = "quantile",
+                       values_to = "VO2") %>% #Turn the data longwise to make facets easier
+   arrange(treatment, id) %>% #hopefully organize by treatment
+   ggplot()+
+   geom_boxplot(aes(x = as.character(id), group = as.character(id), y = VO2, fill = treatment))+
+  theme_bw()+
+  scale_fill_discrete(name="Experimental\nTreatment",
+                         breaks=c("C", "MT"),
+                         labels=c("Control", "MT"))+
+  labs(x = "animal ID", y = "VO2 - ml O2 / min")+
+   facet_wrap(~quantile, ncol = 2)
+```
+
+Just a look at mass & SVL. There is a pretty good distribution between the treatment groups in size, but 2 animals stick out. 91 is a chonker and also had really high MR in the plots above. 113 is the next heaviest and also had a high metabolic rate. This & in combination with their very high resting metabolic rates give me some reason to exclude them from subsequent analysis. This is going to drop the sample size of the control animals to 6. 
+
+```{r}
+ggplot(gators)+
+  geom_point(aes(x = svl, y = mass, color = treatment))+
+  geom_text(aes(x = svl, y = mass, label = id), data =gators, 
+            nudge_x = 0.05, nudge_y = 0.25, check_overlap = F)+
+  scale_color_discrete(name="Experimental\nTreatment",
+                         breaks=c("C", "MT"),
+                         labels=c("Control", "MT"))+
+  labs(x = "SVL (mm)", y = "mass (g)")+
+  theme_bw()
+```
+
+
+Filter out 91 & 113 for analysis. Then run a glmm on median values
+
+```{r}
+ok_gator <- gators %>% filter(id != c("113", "91"))
+library(lme4)
+library(car)
+library(MuMIn)
+
+m1 <-lmer(X0.5~treatment*mass+(1|id), data = ok_gator) 
+summary(m1)
+
+```
+The summary of the model shows that the random effect of id has relatively large variance. When we look at the Fixed Effects table, we can see tht the estimates for treatment & mass are both positive, but they have a negative interaction. This doesn't tell us the 'significance' of those terms but does show us the magnitude of the effects. We can use 'Anova' from the *car* package to look at the signifance of these terms using a likelihood ratio model.
+
+
+```{r}
+Anova(m1)
+```
+
+This shows that teratment on it's own doesn't have a significant effect on V02, but that mass has a vary strong effect (it was positive --  0.18417 +- 0.02635 in the orignal summary). The scaling interation between treatment & mass didn't have a strong effect. The co-variate of mass explains the majority of the variance in the model. We can also see the overall fit of the model by calculating pseudo R2:
+
+```{r}
+r.squaredGLMM(m1)
+```
+
+This returns goodness of fit calculated as a marginal (R2m -- fixed effects only) and a conditional (R2c -- fixed + random effects) value.
+
+So overall, looking at the median VO2 values there isn't an effect of treatment on metabolic rates. The only effect we see is that of mass -- and larger alligators have higher metabolic rates. 
+
+
+
+
+Ryan calculated an initial quantile regression for each quantile. Let's just look the median
+```{r median quant reg}
+rqfit <- rq(X0.5~treatment, data = gators)
+summary(rqfit) #The 95% CI for treatment includes 0. Likely no difference from control 
+summary(rqfit, se = "boot") #Another way to see a t & p-value
+```
+
+One problem with that approach is that it doesn't account for many samples per individual. Try a mixed effects quant reg, but still nothing although the CIs get smaller (so that's good). We'll keep exploring, but need to check closely on those two really high animals.
+
+```{r median lqmm}
+fit <- lqmm(X0.5~treatment, random = ~id, group = id, data = gators)
+fit.boot <- boot(fit)
+str(fit.boot)
+summary(fit.boot)
+```
+
+
+In general, I'm not happy with those approaches so were going to use a mixed effects model on the whole data set at the same time to see if any of the quantiles show treatment differences and if body mass influences these relationships.
+
