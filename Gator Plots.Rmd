@@ -20,7 +20,7 @@ Let's look at some data.
 gators <- read.csv("./Modified_Data/data_summary.csv")
 gators$id <- as.character(gators$id)
 gatorExpInf <- read.csv("./Raw_Data/FMS Experiment Data Collection.xlsx - Sheet1.csv")
-massID <- gatorExpInf %>% select(id = AnalysisAnimalID, mass = Mass)
+massID <- gatorExpInf %>% select(id = AnalysisAnimalID, mass = Mass, svl = SVL)
 gators <- gators %>% left_join(massID)
 names(gators)
 ```
@@ -53,3 +53,7 @@ fit.boot <- boot(fit)
 str(fit.boot)
 summary(fit.boot)
 ```
+
+
+In general, I'm not happy with those approaches so were going to use a mixed effects model on the whole data set at the same time to see if any of the quantiles show treatment differences and if body mass influences these relationships.
+
