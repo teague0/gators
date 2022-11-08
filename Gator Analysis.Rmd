@@ -60,7 +60,8 @@ ggplot(gators)+
 Filter out 91 & 113 for analysis. Then run a glmm on median values
 
 ```{r}
-ok_gator <- gators %>% filter(id != c("113", "91"))
+dropgator <- c("113", "91")
+ok_gator <- gators %>% filter(!(id %in% dropgator))
 library(lme4)
 library(car)
 library(MuMIn)
@@ -69,27 +70,41 @@ m1 <-lmer(X0.5~treatment*mass+(1|id), data = ok_gator)
 summary(m1)
 
 ```
-The summary of the model shows that the random effect of id has relatively large variance. When we look at the Fixed Effects table, we can see tht the estimates for treatment & mass are both positive, but they have a negative interaction. This doesn't tell us the 'significance' of those terms but does show us the magnitude of the effects. We can use 'Anova' from the *car* package to look at the signifance of these terms using a likelihood ratio model.
+The summary of the model shows that the random effect of id has relatively large variance. When we look at the Fixed Effects table, we can see that the estimates for treatment & mass are both negative, but they have a positive interaction. This doesn't tell us the 'significance' of those terms but does show us the magnitude of the effects. We can use 'Anova' from the *car* package to look at the significance of these terms using a likelihood ratio model.
 
 
 ```{r}
 Anova(m1)
 ```
 
-This shows that teratment on it's own doesn't have a significant effect on V02, but that mass has a vary strong effect (it was positive --  0.18417 +- 0.02635 in the orignal summary). The scaling interation between treatment & mass didn't have a strong effect. The co-variate of mass explains the majority of the variance in the model. We can also see the overall fit of the model by calculating pseudo R2:
+There are no significant effects of either mass or treatment on alligator median metabolic rates.
 
 ```{r}
 r.squaredGLMM(m1)
 ```
 
-This returns goodness of fit calculated as a marginal (R2m -- fixed effects only) and a conditional (R2c -- fixed + random effects) value.
+This returns goodness of fit calculated as a marginal (R2m -- fixed effects only) and a conditional (R2c -- fixed + random effects) value. Both are really low & its unsurprising we don't have any effects.
 
 So overall, looking at the median VO2 values there isn't an effect of treatment on metabolic rates. The only effect we see is that of mass -- and larger alligators have higher metabolic rates. 
 
+We can make a plot of mass vs VO2 that accounts for differences among individuals
+
+```{r}
+ok_gator %>% 
+ggplot()+
+  geom_boxplot(aes(x = mass, y = X0.5, group = id, fill = treatment))+
+  theme_bw()+
+  scale_fill_discrete(name="Experimental\nTreatment",
+                         breaks=c("C", "MT"),
+                         labels=c("Control", "MT"))+
+  labs(x = "mass (g)", y = "VO2 - ml O2 / min")
+
+```
 
 
+##### Ryan's estimates
 
-Ryan calculated an initial quantile regression for each quantile. Let's just look the median
+Ryan calculated an initial quantile regression for each quantile and suggested there were differences. I doubt it. Let's just look the median
 ```{r median quant reg}
 rqfit <- rq(X0.5~treatment, data = gators)
 summary(rqfit) #The 95% CI for treatment includes 0. Likely no difference from control 
