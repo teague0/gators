@@ -124,7 +124,7 @@ m2 <-lmer(X0.05~treatment*mass+(1|id), data = ok_gator)
 summary(m2)
 Anova(m2)
 ```
-Plot the lowest quantile / standard metabolic rate
+Plot the lowest quantile / standard metabolic rate for each 5 minute period
 
 ```{r}
 ok_gator %>% 
