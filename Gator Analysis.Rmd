@@ -42,6 +42,26 @@ gators %>% pivot_longer(cols = starts_with("X"),
    facet_wrap(~quantile, ncol = 2)
 ```
 
+We can calculate the variance across the quantiles to see this. It is at or near 0 for all of the five minute intervals.
+
+```{r}
+gators %>% pivot_longer(cols = starts_with("X"),
+                       names_to = "quantile",
+                       values_to = "VO2") %>% 
+  group_by(id, treatment, min5_interval) %>% 
+  mutate(quantVar = var(VO2)) %>% 
+  ggplot()+
+  geom_density(aes(x = quantVar, fill = treatment), alpha = 0.5)+
+  theme_bw()+
+  scale_fill_discrete(name="Experimental\nTreatment",
+                         breaks=c("C", "MT"),
+                         labels=c("Control", "MT"))+
+  labs(x = "among-quantile variance")
+```
+
+
+####Size variation
+
 Just a look at mass & SVL. There is a pretty good distribution between the treatment groups in size, but 2 animals stick out. 91 is a chonker and also had really high MR in the plots above. 113 is the next heaviest and also had a high metabolic rate. This & in combination with their very high resting metabolic rates give me some reason to exclude them from subsequent analysis. This is going to drop the sample size of the control animals to 6. 
 
 ```{r}
@@ -52,11 +72,12 @@ ggplot(gators)+
   scale_color_discrete(name="Experimental\nTreatment",
                          breaks=c("C", "MT"),
                          labels=c("Control", "MT"))+
-  labs(x = "SVL (mm)", y = "mass (g)")+
+  labs(x = "SVL (cm)", y = "mass (g)")+
   theme_bw()
 ```
 
 
+###Analysis of MR & Treatment, Body Mass
 Filter out 91 & 113 for analysis. Then run a glmm on median values
 
 ```{r}
@@ -79,12 +100,6 @@ Anova(m1)
 
 There are no significant effects of either mass or treatment on alligator median metabolic rates.
 
-```{r}
-r.squaredGLMM(m1)
-```
-
-This returns goodness of fit calculated as a marginal (R2m -- fixed effects only) and a conditional (R2c -- fixed + random effects) value. Both are really low & its unsurprising we don't have any effects.
-
 So overall, looking at the median VO2 values there isn't an effect of treatment on metabolic rates. The only effect we see is that of mass -- and larger alligators have higher metabolic rates. 
 
 We can make a plot of mass vs VO2 that accounts for differences among individuals
@@ -97,29 +112,32 @@ ggplot()+
   scale_fill_discrete(name="Experimental\nTreatment",
                          breaks=c("C", "MT"),
                          labels=c("Control", "MT"))+
-  labs(x = "mass (g)", y = "VO2 - ml O2 / min")
+  labs(x = "mass (g)", y = "median VO2 - ml O2 / min")
 
 ```
 
+### Standard Metabolic Rate
+Previous work has used the minimum MR in a 15 minute period. We can use our lowest quantile and see if there is any effect there. There isn't, which isn't much of a surprise considering how little variance there was among the quantiles.
 
-##### Ryan's estimates
+```{r}
+m2 <-lmer(X0.05~treatment*mass+(1|id), data = ok_gator) 
+summary(m2)
+Anova(m2)
+```
+Plot the lowest quantile / standard metabolic rate
 
-Ryan calculated an initial quantile regression for each quantile and suggested there were differences. I doubt it. Let's just look the median
-```{r median quant reg}
-rqfit <- rq(X0.5~treatment, data = gators)
-summary(rqfit) #The 95% CI for treatment includes 0. Likely no difference from control 
-summary(rqfit, se = "boot") #Another way to see a t & p-value
+```{r}
+ok_gator %>% 
+ggplot()+
+  geom_boxplot(aes(x = mass, y = X0.05, group = id, fill = treatment))+
+  theme_bw()+
+  scale_fill_discrete(name="Experimental\nTreatment",
+                         breaks=c("C", "MT"),
+                         labels=c("Control", "MT"))+
+  labs(x = "mass (g)", y = "SMR: VO2 - ml O2 / min")
 ```
 
-One problem with that approach is that it doesn't account for many samples per individual. Try a mixed effects quant reg, but still nothing although the CIs get smaller (so that's good). We'll keep exploring, but need to check closely on those two really high animals.
-
-```{r median lqmm}
-fit <- lqmm(X0.5~treatment, random = ~id, group = id, data = gators)
-fit.boot <- boot(fit)
-str(fit.boot)
-summary(fit.boot)
-```
 
 
-In general, I'm not happy with those approaches so were going to use a mixed effects model on the whole data set at the same time to see if any of the quantiles show treatment differences and if body mass influences these relationships.
+
 
