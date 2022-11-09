@@ -11,6 +11,9 @@ library(quantreg)
 library(lqmm)
 library(googlesheets4)
 ```
+
+### Does MT influence MR in hatching alligators?
+
 Ryan Shipley smoothed out the data and calculated corrected CO2 and O2 fits, as well as quantiles for the metabolic rates that are included in the 'data_summary.csv' file that we'll work with. This has the various quantiles calculated for each 5 minute observation period, so there are multiple observations per animal. If we want to calculate SMR in a simlar way to other studies, then we will need to look for the lowest, stable metabolic rate for 10, 15, or 30 minutes (whatever has been used before).  
 
 If we want to do any additional exploration of parameters like RER, then we'll go back into Ryan's code and re-calculate that for our individuals. 
@@ -60,7 +63,7 @@ gators %>% pivot_longer(cols = starts_with("X"),
 ```
 
 
-####Size variation
+#### Size variation
 
 Just a look at mass & SVL. There is a pretty good distribution between the treatment groups in size, but 2 animals stick out. 91 is a chonker and also had really high MR in the plots above. 113 is the next heaviest and also had a high metabolic rate. This & in combination with their very high resting metabolic rates give me some reason to exclude them from subsequent analysis. This is going to drop the sample size of the control animals to 6. 
 
@@ -87,7 +90,7 @@ library(lme4)
 library(car)
 library(MuMIn)
 
-m1 <-lmer(X0.5~treatment*mass+(1|id), data = ok_gator) 
+m1 <-glmer(X0.5~treatment*mass+(1|id), data = ok_gator) 
 summary(m1)
 
 ```
@@ -124,7 +127,10 @@ m2 <-lmer(X0.05~treatment*mass+(1|id), data = ok_gator)
 summary(m2)
 Anova(m2)
 ```
+
+
 Plot the lowest quantile / standard metabolic rate for each 5 minute period
+
 
 ```{r}
 ok_gator %>% 
