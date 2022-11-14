@@ -14,7 +14,7 @@ library(googlesheets4)
 
 ### Does MT influence MR in hatching alligators?
 
-Ryan Shipley smoothed out the data and calculated corrected CO2 and O2 fits, as well as quantiles for the metabolic rates that are included in the 'data_summary.csv' file that we'll work with. This has the various quantiles calculated for each 5 minute observation period, so there are multiple observations per animal. If we want to calculate SMR in a simlar way to other studies, then we will need to look for the lowest, stable metabolic rate for 10, 15, or 30 minutes (whatever has been used before).  
+Ryan Shipley smoothed out the data and calculated corrected CO2 and O2 fits, as well as quantiles for the metabolic rates that are included in the 'data_summary.csv' file that we'll work with. This has the various quantiles calculated for each 5 minute observation period, so there are multiple observations per animal. If we want to calculate SMR in a similar way to other studies, then we will need to look for the lowest, stable metabolic rate for 10, 15, or 30 minutes (whatever has been used before).  
 
 If we want to do any additional exploration of parameters like RER, then we'll go back into Ryan's code and re-calculate that for our individuals. 
 
